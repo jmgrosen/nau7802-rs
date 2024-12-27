@@ -23,7 +23,7 @@ impl<D: i2c::I2c> Nau7802<D> {
     const DEVICE_ADDRESS: u8 = 0x2A;
 
     #[inline]
-    pub fn new<W: DelayNs>(i2c_dev: D, wait: &mut W) -> Result<Self> {
+    pub fn new<W: DelayNs>(i2c_dev: D, wait: &mut W) -> core::result::Result<Self, (Error, D)> {
         Self::new_with_settings(
             i2c_dev,
             Ldo::L3v3,
@@ -39,23 +39,29 @@ impl<D: i2c::I2c> Nau7802<D> {
         gain: Gain,
         sps: SamplesPerSecond,
         wait: &mut W,
-    ) -> Result<Self> {
+    ) -> core::result::Result<Self, (Error, D)> {
         let mut adc = Self { i2c_dev };
 
-        adc.start_reset()?;
+        if let Err(err) = adc.init(ldo, gain, sps, wait) {
+            Err((err, adc.i2c_dev))
+        } else {
+            Ok(adc)
+        }
+    }
+
+    fn init(&mut self, ldo: Ldo, gain: Gain, sps: SamplesPerSecond, wait: &mut impl DelayNs) -> Result<()> {
+        self.start_reset()?;
         // need 1 ms delay here maybe?
         wait.delay_ms(1);
-        adc.finish_reset()?;
-        adc.power_up()?;
-        adc.set_ldo(ldo)?;
-        adc.set_gain(gain)?;
-        adc.set_sample_rate(sps)?;
-        adc.misc_init()?;
-        adc.begin_afe_calibration()?;
+        self.finish_reset()?;
+        self.power_up()?;
+        self.set_ldo(ldo)?;
+        self.set_gain(gain)?;
+        self.set_sample_rate(sps)?;
+        self.misc_init()?;
+        self.begin_afe_calibration()?;
 
-        while adc.poll_afe_calibration_status()? != AfeCalibrationStatus::Success {}
-
-        Ok(adc)
+        Ok(())
     }
 
     pub fn destroy(self) -> D {
